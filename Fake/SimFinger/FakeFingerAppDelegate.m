@@ -50,7 +50,7 @@ void WindowFrameDidChangeCallback( AXObserverRef observer, AXUIElementRef elemen
 		
 		for(NSDictionary *application in applications)
 		{
-			if([[application objectForKey:@"NSApplicationName"] isEqualToString:@"iPhone Simulator"])
+			if([[application objectForKey:@"NSApplicationName"] isEqualToString:@"iOS Simulator"])
 			{
 				pid_t pid = (pid_t)[[application objectForKey:@"NSApplicationProcessIdentifier"] integerValue];
 				
@@ -282,7 +282,15 @@ enum {
 	NSRunAlertPanel(@"Fake Apps Installed", @"Fake Apps have been installed in iPhone Simulator.  Please restart iPhone Simulator for changes to take effect.", @"OK", nil, nil);
 }
 
-
+- (void)setPointerOverlay:(BOOL)state
+{
+	if(state) {
+		[pointerOverlay orderFront:nil];
+	} else {
+		[pointerOverlay orderOut:nil];
+	}
+	pointerOverlayIsHidden = state;
+}
 
 
 - (void)_updateWindowPosition
@@ -291,34 +299,36 @@ enum {
 	[pointerOverlay setFrameOrigin:NSMakePoint(p.x - 25, p.y - 25)];
 }
 
-- (void)mouseDown
+- (void)mouseDown:(CGEventFlags)flags
 {
 	[pointerOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"Active"]]];
 }
 
-- (void)mouseUp
+- (void)mouseUp:(CGEventFlags)flags
 {
 	[pointerOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"Hover"]]];
 }
 
-- (void)mouseMoved
+- (void)mouseMoved:(CGEventFlags)flags
 {
 	[self _updateWindowPosition];
 }
 
-- (void)mouseDragged
+- (void)mouseDragged:(CGEventFlags)flags
 {
 	[self _updateWindowPosition];
 }
 
-
-
+- (void)flagsChanged:(CGEventFlags)flags
+{
+	[self setPointerOverlay:!(flags & kCGEventFlagMaskAlternate)];
+}
 
 - (void)configureHardwareOverlay:(NSMenuItem *)sender
 {
 	if(hardwareOverlayIsHidden) {
-		[hardwareOverlay orderFront:nil];
-		[fadeOverlay orderFront:nil];
+		//[hardwareOverlay orderFront:nil];
+//		[fadeOverlay orderFront:nil];
 		[sender setState:NSOffState];
 	} else {
 		[hardwareOverlay orderOut:nil];
@@ -341,22 +351,33 @@ enum {
 }
 
 
+	
+
 CGEventRef tapCallBack(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *info)
 {
 	FakeFingerAppDelegate *delegate = (FakeFingerAppDelegate *)info;
 	switch(type)
 	{
 		case kCGEventLeftMouseDown:
-			[delegate mouseDown];
+			[delegate mouseDown:CGEventGetFlags(event)];
 			break;
 		case kCGEventLeftMouseUp:
-			[delegate mouseUp];
+			[delegate mouseUp:CGEventGetFlags(event)];
 			break;
 		case kCGEventLeftMouseDragged:
-			[delegate mouseDragged];
+			[delegate mouseDragged:CGEventGetFlags(event)];
 			break;
 		case kCGEventMouseMoved:
-			[delegate mouseMoved];
+			[delegate mouseMoved:CGEventGetFlags(event)];
+			break;
+		case kCGEventKeyDown:
+			[delegate keyDown:CGEventGetFlags(event)];
+			break;
+		case kCGEventKeyUp:
+			[delegate keyDown:CGEventGetFlags(event)];
+			break;
+		case kCGEventFlagsChanged:
+			[delegate flagsChanged:CGEventGetFlags(event)];
 			break;
 	}
 	return event;
@@ -370,7 +391,7 @@ CGEventRef tapCallBack(CGEventTapProxy proxy, CGEventType type, CGEventRef event
 	[hardwareOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"iPhoneFrame"]]];
 	[hardwareOverlay setIgnoresMouseEvents:YES];
 	[hardwareOverlay setLevel:NSFloatingWindowLevel - 1];
-	[hardwareOverlay orderFront:nil];
+	[hardwareOverlay orderOut:nil];
 	
 	screenRect = [[hardwareOverlay screen] frame];
 	
@@ -389,12 +410,14 @@ CGEventRef tapCallBack(CGEventTapProxy proxy, CGEventType type, CGEventRef event
 	[fadeOverlay setBackgroundColor:[NSColor colorWithPatternImage:[NSImage imageNamed:@"FadeFrame"]]];
 	[fadeOverlay setIgnoresMouseEvents:YES];
 	[fadeOverlay setLevel:NSFloatingWindowLevel + 1];
-	[fadeOverlay orderFront:nil];
+	[fadeOverlay orderOut:nil];
 	
-	CGEventMask mask =	CGEventMaskBit(kCGEventLeftMouseDown) | 
-						CGEventMaskBit(kCGEventLeftMouseUp) | 
-						CGEventMaskBit(kCGEventLeftMouseDragged) | 
-						CGEventMaskBit(kCGEventMouseMoved);
+	CGEventMask mask = CGEventMaskBit(kCGEventLeftMouseDown)
+					 | CGEventMaskBit(kCGEventLeftMouseUp) 
+					 | CGEventMaskBit(kCGEventLeftMouseDragged)
+				     | CGEventMaskBit(kCGEventMouseMoved)
+					 | CGEventMaskBit(kCGEventFlagsChanged)
+					 ;
 
 	CFMachPortRef tap = CGEventTapCreate(kCGAnnotatedSessionEventTap,
 									kCGTailAppendEventTap,
